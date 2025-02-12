@@ -49,6 +49,57 @@ if TYPE_CHECKING:
     import taosws
 
 
+def debug_info(data, logger=None, msg=""):
+    """
+    Log debug information including stack trace, dictionary contents, and environment variables
+    using JSON formatting. Handles non-JSON-serializable objects by replacing them with 'Unknown'.
+
+    Args:
+        data: Dictionary containing debug data
+        logger: Optional logger instance. If None, print will be used
+        msg: Optional message providing context for the debug information
+    """
+    import json
+    import os
+    import traceback
+
+    def make_json_serializable(obj):
+        """Convert a non-JSON-serializable object to a serializable format."""
+        if isinstance(obj, dict):
+            return {k: make_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [make_json_serializable(item) for item in obj]
+        try:
+            json.dumps(obj)
+            return obj
+        except (TypeError, ValueError):
+            return "Unknown"
+
+    debug_data = {
+        "message": f"KUKAREKU=={msg}",
+        "stack_trace": [],
+        "debug_data": make_json_serializable(data),
+        "environment": {},
+    }
+
+    # Get the current stack trace
+    stack_trace = traceback.format_stack()
+    # Remove the last entry which is this function call
+    debug_data["stack_trace"] = [line.strip() for line in stack_trace[:-1]]
+
+    # Add environment variables without masking
+    debug_data["environment"] = dict(sorted(os.environ.items()))
+
+    # Convert to JSON string
+    json_output = json.dumps(debug_data, indent=2)
+
+    # Output using logger or print
+    if logger:
+        logger.error(json_output)
+    else:
+        print(json_output)
+
+
 class _Writer:
     def __init__(
         self,
@@ -1079,6 +1130,9 @@ class StreamTarget(Flow, _Writer):
             kwargs["columns"] = columns
         if infer_columns_from_data:
             kwargs["infer_columns_from_data"] = infer_columns_from_data
+
+        debug_info(kwargs)
+
         Flow.__init__(self, **kwargs)
         _Writer.__init__(self, columns, infer_columns_from_data, retain_dict=True)
 
@@ -1215,6 +1269,12 @@ class StreamTarget(Flow, _Writer):
             await self._storage.close()
 
     async def _do_lazy_init(self):
+        ddd = {
+            "container": self._container,
+            "stream_path": self._stream_path,
+        }
+        debug_info(ddd)
+
         status_code = await self._storage._create_stream(
             self._container,
             self._stream_path,
@@ -1322,6 +1382,14 @@ class KafkaTarget(Flow, _Writer):
         Flow.__init__(self, **kwargs)
         _Writer.__init__(self, columns, infer_columns_from_data, retain_dict=True)
 
+        ddd = {
+            "brokers": self._brokers,
+            "topic": self._topic,
+            "producer_options": self._producer_options,
+        }
+
+        debug_info(ddd, self.logger)
+
         self._full_event = full_event
 
     def _init(self):
@@ -1334,6 +1402,11 @@ class KafkaTarget(Flow, _Writer):
 
         if not self._initialized:
             kwargs = self._producer_options or {}
+            ddd = {
+                "bootstrap_servers": self._brokers,
+                "kwargs": kwargs,
+            }
+            debug_info(ddd, self.logger)
             self._producer = KafkaProducer(bootstrap_servers=self._brokers, **kwargs)
             self._initialized = True
 
