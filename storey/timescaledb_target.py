@@ -102,7 +102,10 @@ class TimescaleDBTarget(_Batching, _Writer):
             time_field=time_col,
             time_format=time_format,
         )
+        self._schema = None
         self._table = table
+        if "." in self._table:
+            self._schema, self._table = self._table.split(".", 1)
 
         # Store configuration
         self._time_col = time_col
@@ -193,7 +196,9 @@ class TimescaleDBTarget(_Batching, _Writer):
         async with self._pool.acquire() as conn:
             # Use PostgreSQL's COPY protocol for optimal performance
             # This is significantly faster than individual INSERT statements
-            await conn.copy_records_to_table(self._table, records=records, columns=self._column_names)
+            await conn.copy_records_to_table(
+                table_name=self._table, schema_name=self._schema, records=records, columns=self._column_names
+            )
 
     async def _terminate(self):
         """Terminate and cleanup resources.
