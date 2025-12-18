@@ -76,6 +76,7 @@ class Flow:
         self._closeables = []
 
     def _init(self):
+        self._closeables = []
         self._termination_received = 0
         self._termination_result = None
 
